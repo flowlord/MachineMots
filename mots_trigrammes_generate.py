@@ -1,51 +1,59 @@
 # -*- coding: utf-8 -*-
-"""
-Generates word from trigramm transition matrix stored in a binary file
-Checks whether the word already exists
-"""
+# mots_trigrammes_generate.py
+# Génère des mots en utilisant la matrice de transition de trigrammes
 
 import numpy as np
 from numpy.random import choice
 import codecs
 
-# Build a dictionnary to check whether word already exists
+# Charger le fichier de mots français dans une liste pour vérifier les doublons
 filepath = "liste.de.mots.francais.frgut.txt"
-dico = []
+dico = set()
 with codecs.open(filepath, "r", "utf-8") as lines:
-    for l in  lines:
-        dico.append(l[:-1])
- 
-# Load the trigram count matrixand normalize it     
-count = np.fromfile("count2D.bin",dtype="int32").reshape(256,256,256)
-s=count.sum(axis=2)
-st=np.tile(s.T,(256,1,1)).T
-p=count.astype('float')/st
-p[np.isnan(p)]=0
+    for line in lines:
+        dico.add(line.strip())
 
+# Chargement et normalisation de la matrice de transition des trigrammes
+count = np.fromfile("count.bin", dtype="int32").reshape((256, 256, 256))
+s = count.sum(axis=2)
 
-# Build words
+# Correction : éviter les divisions par zéro et les lignes de transition nulles
+s[s == 0] = 1  # Empêche la division par zéro
+p = count / s[:, :, None]  # Normalisation de probabilité
+p[np.isnan(p)] = 0  # Remplace NaN par zéro
+
+# Vérification et correction des probabilités
+for i in range(256):
+    for j in range(256):
+        if not np.isclose(p[i, j, :].sum(), 1.0):
+            # Redistribution uniforme si la somme est trop éloignée de 1
+            p[i, j, :] = 1.0 / 256
+
+# Génération de nouveaux mots
 outfile = "output.txt"
-f = codecs.open(outfile,"w","utf-8")
+with codecs.open(outfile, "w", "utf-8") as f:
+    target_length = 50000  # Nombre de mots à générer par longueur cible
+    for TGT in range(4, 17):  # Longueur de mot cible de 4 à 10
+        total_generated = 0
+        while total_generated < target_length:
+            i, j = 0, 0
+            word = ""
+            # Génération d'un mot de longueur spécifique
+            while True:
+                k = choice(range(256), p=p[i, j, :])
+                if k == 10:  # Arrêter si caractère de fin de ligne
+                    break
+                word += chr(k)
+                if len(word) == TGT:
+                    break
+                i, j = j, k
+            if word and word not in dico:  # Vérifie si le mot est nouveau
+                f.write(word + "\n")
+                total_generated += 1
+                print(f"Mot généré : {word}")
 
-# How many for each target size
-K = 100
-for TGT in range(4,11):
-    total = 0
-    while total<100:
-        i=0
-        j=0
-        res = u''
-        while not j==10:
-            k=choice(range(256),1,p=p[i,j,:])[0]
-            res = res + chr(k)
-            i=j
-            j=k
-        if len(res) == 1+TGT:
-            if res[:-1] in dico:
-                x=res[:-1]+"*"
-            else:
-                x=res[:-1]
-            total += 1
-            print(x)
-            f.write(x+"\n")
-f.close()
+print("Génération de mots terminée et sauvegardée dans 'output.txt'")
+
+
+
+
